@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flash_chat/screens/add_user.dart';
 import 'package:flutter/material.dart';
 import 'package:flash_chat/constants.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,7 +8,10 @@ final _firestore = Firestore.instance;
 FirebaseUser loggedInUser;
 
 class ChatScreen extends StatefulWidget {
+  ChatScreen({this.roomId});
+
   static String id = 'chat_screen';
+  final String roomId;
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
@@ -16,11 +20,16 @@ class _ChatScreenState extends State<ChatScreen> {
   final messageTextController = TextEditingController();
   final _auth = FirebaseAuth.instance;
   String messageText;
+  String roomId;
+  String collectionName = 'messages';
 
   @override
   void initState() {
     super.initState();
-
+    if (widget.roomId != null) {
+      collectionName = 'rooms';
+      roomId = widget.roomId;
+    }
     getCurrentUser();
   }
 
@@ -42,6 +51,19 @@ class _ChatScreenState extends State<ChatScreen> {
         leading: null,
         actions: <Widget>[
           IconButton(
+            icon: Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddUserScreen(
+                    roomId: roomId,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
               icon: Icon(Icons.close),
               onPressed: () {
                 _auth.signOut();
@@ -56,7 +78,9 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            MessagesStream(),
+            MessagesStream(
+              roomID: roomId,
+            ),
             Container(
               decoration: kMessageContainerDecoration,
               child: Row(
@@ -75,11 +99,23 @@ class _ChatScreenState extends State<ChatScreen> {
                   FlatButton(
                     onPressed: () {
                       messageTextController.clear();
-                      _firestore.collection('messages').add({
-                        'text': messageText,
-                        'sender': loggedInUser.email,
-                        'time': DateTime.now().millisecondsSinceEpoch,
-                      });
+                      if (roomId != null) {
+                        _firestore
+                            .collection('rooms')
+                            .document(roomId)
+                            .collection('messages')
+                            .add({
+                          'text': messageText,
+                          'sender': loggedInUser.email,
+                          'time': DateTime.now().millisecondsSinceEpoch,
+                        });
+                      } else {
+                        _firestore.collection('messages').add({
+                          'text': messageText,
+                          'sender': loggedInUser.email,
+                          'time': DateTime.now().millisecondsSinceEpoch,
+                        });
+                      }
                     },
                     child: Text(
                       'Send',
@@ -97,13 +133,22 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class MessagesStream extends StatelessWidget {
+  MessagesStream({this.roomID});
+  final roomID;
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('messages')
-          .orderBy('time', descending: false)
-          .snapshots(),
+      stream: roomID != null
+          ? _firestore
+              .collection('rooms')
+              .document(roomID)
+              .collection('messages')
+              .orderBy('time', descending: false)
+              .snapshots()
+          : _firestore
+              .collection('messages')
+              .orderBy('time', descending: false)
+              .snapshots(),
       builder: (context, snapshot) {
         List<MessageBubble> messageBubbles = [];
         if (!snapshot.hasData) {
